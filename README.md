@@ -2,17 +2,37 @@
 
 This local Chrome/Edge extension fills an existing activity row and daily or weekly time cells on the Planview Report Time page. It does not submit forms, access credentials, or send Planview data externally. It only requests public holiday data from Nager's PublicHolidays API.
 
-## Install locally
+## Install locally in Chrome or Edge
 
 1. Open `chrome://extensions` or `edge://extensions` in the browser that IT permits.
 2. Enable **Developer mode**.
 3. Choose **Load unpacked** and select this folder.
 4. Open the Planview Report Time page. The helper appears in the upper-right corner.
-5. Choose an **Entry type** from the available activities, choose **Daily** or **Weekly**, enter the hours, then choose **Fill**. Daily mode uses checkboxes for the currently rendered days; weekly mode hides the day checkboxes and fills the table's **Weekly** column with the entered total. **Clear** clears editable time-entry cells in the current Planview table while leaving the helper settings and selections unchanged. It does not submit the timesheet. Review Planview's values and submit there.
-6. Choose **New template** to define a named daily or weekly template. Daily templates have a Monday-Friday hours column for every activity; weekly templates have one weekly total per activity. Save it, then select the template from **Entry type** to fill all configured activities at once. Daily filling matches each rendered Planview date to the corresponding template weekday, even when only one day such as Monday is shown. Weekly totals are prorated by the number of visible working weekdays, so a one-day table receives one fifth of the weekly total. When a template is selected, use the compact **Time adjustments** table to enter positive or negative changes for any activities. Each adjustment is applied in 0.5-hour increments; daily adjustments are distributed across visible, non-holiday weekdays, while weekly adjustments are added to the corresponding weekly totals. Templates and the default-template setting are stored in the page's browser `localStorage`; choose **Edit selected** to update one.
+5. Choose an **Entry type** from the available activities. Activities are grouped under the same Planview section headings as the timesheet, so identical names in different groups remain easy to distinguish. Choose **Daily** or **Weekly**, enter the hours, then choose **Fill**. Daily mode uses checkboxes for the currently rendered days; weekly mode hides the day checkboxes and fills the table's **Weekly** column with the entered total. **Clear** clears editable time-entry cells in the current Planview table while leaving the helper settings and selections unchanged. It does not submit the timesheet. Review Planview's values and submit there.
+6. Choose **New template** to define a named daily or weekly template. The template editor repeats the Planview group headings above each activity, including activities with duplicate names. Daily templates have a Monday-Friday hours column for every activity; weekly templates have one weekly total per activity. Save it, then select the template from **Entry type** to fill all configured activities at once. Daily filling matches each rendered Planview date to the corresponding template weekday, even when only one day such as Monday is shown. Weekly totals are prorated by the number of visible working weekdays, so a one-day table receives one fifth of the weekly total. When a template is selected, use the grouped **Time adjustments** table to enter positive or negative changes for any activities. Each adjustment is applied in 0.5-hour increments; daily adjustments are distributed across visible, non-holiday weekdays, while weekly adjustments are added to the corresponding weekly totals. Templates and the default-template setting are stored in the page's browser `localStorage`; choose **Edit selected** to update one.
 7. Expand **Settings** to set standard working-day hours and the public-holiday country. The helper automatically loads holidays for the year shown by Planview from Nager's PublicHolidays API when that country/year is not cached in extension storage. Changing country triggers an automatic load; **Refresh public holidays** forces a fresh request. Holiday dates override template values: normal template activities are left empty on those dates, while the Planview **Public Holidays** activity receives the configured standard-day hours.
 
 The extension currently targets only the URL in `manifest.json`. If your permitted browser uses a different Planview hostname, update the `matches` entry before loading it.
+
+## Install locally in Firefox
+
+Firefox uses the alternate `manifest.firefox.json`, because its MV3 background declaration uses `background.scripts` instead of Chrome's `background.service_worker`.
+
+For temporary development installation, build the Firefox directory with:
+
+```sh
+scripts/build-firefox.sh --output-dir firefox-build
+```
+
+Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `firefox-build/planview-time-helper-firefox.zip`. Firefox permits this temporary add-on without signing; it is removed when Firefox restarts. Open the Planview Report Time page after loading it.
+
+To sign a package for regular Firefox installation, create `.env` from `.env.example`, fill in the Mozilla API credentials, and run:
+
+```sh
+scripts/build-firefox.sh --sign
+```
+
+Alternatively, pass the credentials on the command line: `scripts/build-firefox.sh --sign --api-key KEY --api-secret SECRET`. Obtain API credentials from [addons.mozilla.org](https://addons.mozilla.org/developers/addon/api/key/). A regular Firefox installation requires Mozilla signing, or Firefox Enterprise policies for administrator-managed deployments.
 
 ## Current limitation
 
@@ -21,3 +41,17 @@ The Report Time page is a timesheet grid rather than a conventional form. The he
 ## Custom templates
 
 A template records the exact set of activity IDs present when it was saved. When an activity is added or removed, the template is labeled **needs update** and Fill is blocked until it is edited against the current activity list. This prevents hours from being silently applied to the wrong set of activities after projects change. Existing weekly templates continue to use their stored per-activity totals; edit them to create a new daily schedule.
+
+# How to use
+
+Visit the time registration page in Planview (URL like https://*.pvcloud.com/planview/Track/Time/Report/...). The helper will appear.
+
+![alt text](docs/helper_main.png)
+
+Create a template or more for filling out the time registration with pre-defined fields.
+
+![alt text](docs/helper_template.png)
+
+When applying a template it is possible to adjust value per activity to capture over/under hours compared to the normal scenario.  If the adjustment are always the same, updating the template is easier.
+
+Selecting a single activity enables the user to fill out just a single line without creating a template first.  This is very useful when reporting non-standard events like absences, public holidays or other non-ordinary events requiring regiatration.
