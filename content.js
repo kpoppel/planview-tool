@@ -25,6 +25,7 @@
     #${panelId} .pth-settings-content { padding-top: 4px; }
     #${panelId} .pth-settings-content button { width: 100%; margin-top: 8px; }
     #${panelId} .pth-holiday-status { margin-top: 8px; color: #52606d; font-size: 12px; }
+    #${panelId} .pth-adjustment { margin-top: 10px; padding-top: 10px; border-top: 1px solid #d3dbe1; }
     #${panelId} .pth-day-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; max-height: 120px; overflow: auto; padding: 6px 0; }
     #${panelId} .pth-day-list label { margin: 0; font-weight: 400; white-space: nowrap; }
     #${panelId} .pth-day-list input { width: auto; margin-right: 5px; }
@@ -72,6 +73,12 @@
       <label for="pth-hours">Hours</label>
       <input id="pth-hours" type="text" inputmode="decimal" value="7,4" placeholder="e.g. 7,4 or 7:30">
     </div>
+    <div class="pth-adjustment">
+      <label for="pth-adjustment-activity">Activity to adjust</label>
+      <select id="pth-adjustment-activity"></select>
+      <label for="pth-adjustment-hours">Time adjustment (hours)</label>
+      <input id="pth-adjustment-hours" type="number" inputmode="decimal" step="0.5" placeholder="e.g. +2 or -1.5">
+    </div>
     <div class="pth-actions">
       <button class="pth-fill" type="button">Fill</button>
       <button class="pth-scan" id="pth-clear" type="button">Clear</button>
@@ -116,7 +123,9 @@
   const fields = {
     activity: panel.querySelector("#pth-entry-type"),
     manualDayList: panel.querySelector("#pth-manual-day-list"),
-    hours: panel.querySelector("#pth-hours")
+    hours: panel.querySelector("#pth-hours"),
+    adjustmentActivity: panel.querySelector("#pth-adjustment-activity"),
+    adjustmentHours: panel.querySelector("#pth-adjustment-hours")
   };
   const defaultTemplate = panel.querySelector("#pth-default-template");
   const standardHours = panel.querySelector("#pth-standard-hours");
@@ -167,6 +176,15 @@
 
   const selectedTemplateId = () => fields.activity.selectedOptions[0]?.dataset.templateId || "";
 
+  const updateAdjustmentOptions = (works, selectedValue = "") => {
+    const template = readTemplates().find((item) => item.id === selectedTemplateId());
+    const entries = new Set(Array.isArray(template?.entries) ? template.entries.map((entry) => entry.id) : []);
+    const options = [new Option("No adjustment", "")];
+    works.filter(({ id }) => entries.has(id)).forEach(({ id, label }) => options.push(new Option(label, id)));
+    fields.adjustmentActivity.replaceChildren(...options);
+    fields.adjustmentActivity.value = options.some((option) => option.value === selectedValue) ? selectedValue : "";
+  };
+
   const templateWeekdays = [
     { value: "1", label: "Monday" },
     { value: "2", label: "Tuesday" },
@@ -180,7 +198,9 @@
       work: fields.activity.value,
       mode: selectedMode(),
       hours: fields.hours.value,
-      manualDays: selectedManualDays()
+      manualDays: selectedManualDays(),
+      adjustmentActivity: fields.adjustmentActivity.value,
+      adjustmentHours: fields.adjustmentHours.value
     };
     chrome.storage.local.set({ [STORAGE_KEY]: values });
   };
@@ -207,6 +227,7 @@
     fields.activity.replaceChildren(...options);
     fields.activity.value = selectedValue && options.some((option) => option.value === selectedValue)
       ? selectedValue : (works[0]?.id || "");
+    updateAdjustmentOptions(works);
     defaultTemplate.replaceChildren(new Option("No default", ""), ...templates.map((template) => new Option(template.name, template.id)));
   };
 
@@ -317,6 +338,7 @@
     entryMode.style.display = isTemplate ? "none" : "block";
     dailyOptions.style.display = isTemplate || selectedMode() !== "daily" ? "none" : "block";
     hoursField.style.display = isTemplate ? "none" : "block";
+    panel.querySelector(".pth-adjustment").style.display = isTemplate ? "block" : "none";
   };
 
   const loadPageOptions = (saved = {}) => {
@@ -330,12 +352,14 @@
     updateManualDayList(days, savedManualDays || weekdayDefaults(days));
     modeInputs.forEach((input) => { input.checked = input.value === (saved.mode || "daily"); });
     fields.hours.value = saved.hours || "";
+    fields.adjustmentHours.value = saved.adjustmentHours || "";
     const storedDefault = saved.defaultTemplate || window.localStorage.getItem(`${TEMPLATES_KEY}:default`) || "";
     defaultTemplate.value = storedDefault;
     if (storedDefault && !saved.work) {
       const defaultOption = Array.from(fields.activity.options).find((option) => option.dataset.templateId === storedDefault);
       if (defaultOption) fields.activity.value = defaultOption.value;
     }
+    updateAdjustmentOptions(works, saved.adjustmentActivity || "");
     updateMode();
     setStatus(`Ready: ${works.length} work item${works.length === 1 ? "" : "s"}, ${days.length} days.`);
     if (loadedHolidayYear !== days[0]?.date?.slice(0, 4) || loadedHolidayCountry !== holidayCountry.value) loadHolidays();
@@ -427,8 +451,14 @@
     loadPageOptions(values);
   });
 
-  fields.activity.addEventListener("change", () => { updateMode(); saveDefaults(); });
+  fields.activity.addEventListener("change", () => {
+    updateAdjustmentOptions(workRows(), fields.adjustmentActivity.value);
+    updateMode();
+    saveDefaults();
+  });
   fields.hours.addEventListener("change", saveDefaults);
+  fields.adjustmentActivity.addEventListener("change", saveDefaults);
+  fields.adjustmentHours.addEventListener("change", saveDefaults);
   defaultTemplate.addEventListener("change", () => {
     window.localStorage.setItem(`${TEMPLATES_KEY}:default`, defaultTemplate.value);
     setStatus(defaultTemplate.value ? "Default template saved." : "Default template cleared.");
@@ -471,6 +501,41 @@
     element.dispatchEvent(new Event("change", { bubbles: true }));
   };
 
+  const parseHours = (value) => {
+    const text = String(value ?? "").trim();
+    const clockMatch = text.match(/^(\d+)\s*:\s*(\d{1,2})$/);
+    if (clockMatch) return Number(clockMatch[1]) + Number(clockMatch[2]) / 60;
+    const numericValue = Number(text.replace(",", "."));
+    return Number.isFinite(numericValue) ? numericValue : null;
+  };
+
+  const formatHours = (value) => String(Number(value.toFixed(2))).replace(".", ",");
+
+  const distributeDailyAdjustment = (days, holidayIndexes, dailyHours, adjustment) => {
+    const available = days
+      .filter(({ weekday, value }) => weekday >= 1 && weekday <= 5 && !holidayIndexes.has(Number(value)))
+      .map((day) => ({
+        ...day,
+        hours: parseHours(dailyHours[String(day.weekday)] || "0")
+      }));
+    if (available.some(({ hours }) => hours === null)) return null;
+    let remainingSteps = Math.round(adjustment * 2);
+    let cursor = 0;
+    while (remainingSteps) {
+      let changed = false;
+      for (let checked = 0; checked < available.length && remainingSteps; checked += 1) {
+        const item = available[cursor % available.length];
+        cursor += 1;
+        if (remainingSteps < 0 && item.hours < 0.5) continue;
+        item.hours += remainingSteps > 0 ? 0.5 : -0.5;
+        remainingSteps += remainingSteps > 0 ? -1 : 1;
+        changed = true;
+      }
+      if (!changed) return null;
+    }
+    return new Map(available.map(({ value, hours }) => [value, formatHours(hours)]));
+  };
+
   const fill = () => {
     const templateId = selectedTemplateId();
     if (templateId) {
@@ -493,21 +558,55 @@
       const visibleWeekdays = renderedWeekdays.size || 5;
       const workingDayCount = workingWeekdays.size || Math.max(visibleWeekdays - holidays.length, 0);
       const holidayWork = findHolidayWork(works);
+      const adjustmentActivityId = fields.adjustmentActivity.value;
+      const adjustmentText = fields.adjustmentHours.value.trim();
+      const adjustment = adjustmentText ? parseHours(adjustmentText) : 0;
+      if (adjustmentText && (adjustment === null || !Number.isInteger(adjustment * 2))) {
+        setStatus("Time adjustments must be entered in 0.5-hour increments.");
+        return;
+      }
+      const adjustmentWork = works.find(({ id }) => id === adjustmentActivityId);
+      const adjustmentEntry = adjustmentWork ? entries.get(adjustmentWork.id) : null;
+      const dailyAdjustmentValues = template.mode === "daily" && adjustmentWork && adjustment
+        ? distributeDailyAdjustment(days, holidayIndexes, typeof adjustmentEntry === "object" ? adjustmentEntry : {}, adjustment)
+        : null;
+      if (adjustment && template.mode === "daily" && !dailyAdjustmentValues) {
+        setStatus("The adjustment cannot be distributed across the available days without creating negative time.");
+        return;
+      }
       let filled = 0;
       works.forEach((work) => {
         const value = entries.get(work.id);
-        if (!value) return;
+        if (!value && work.id !== adjustmentActivityId) return;
         if (template.mode === "daily") {
           days.forEach((day) => {
             if (holidayIndexes.has(Number(day.value))) return;
             const dailyHours = typeof value === "object" ? value : {};
-            const hours = dailyHours[String(day.weekday)];
+            const hours = work.id === adjustmentActivityId && dailyAdjustmentValues?.has(day.value)
+              ? dailyAdjustmentValues.get(day.value)
+              : dailyHours[String(day.weekday)];
             const target = work.row.querySelectorAll("td.dailyCol input")[Number(day.value)];
             if (hours && target) { setNativeValue(target, hours); filled += 1; }
           });
         } else {
           const target = work.row.querySelector("input[id$='###weekly']");
-          if (target) { setNativeValue(target, scaleWeeklyHours(value, workingDayCount)); filled += 1; }
+          if (target) {
+            let hours = scaleWeeklyHours(value || "0", workingDayCount);
+            if (work.id === adjustmentActivityId && adjustment) {
+              const numericHours = parseHours(hours);
+              if (numericHours === null) {
+                setStatus("The selected activity has an invalid template value.");
+                return;
+              }
+              if (numericHours + adjustment < 0) {
+                setStatus("The adjustment cannot create negative time for the selected activity.");
+                return;
+              }
+              hours = formatHours(numericHours + adjustment);
+            }
+            setNativeValue(target, hours);
+            filled += 1;
+          }
         }
       });
       if (holidayWork && holidays.length && standardHours.value.trim()) {
@@ -581,7 +680,9 @@
         work: fields.activity.value,
         mode: selectedMode(),
         hours: fields.hours.value,
-        manualDays: selectedManualDays()
+        manualDays: selectedManualDays(),
+        adjustmentActivity: fields.adjustmentActivity.value,
+        adjustmentHours: fields.adjustmentHours.value
       };
       loadPageOptions(saved);
     }, 250);
