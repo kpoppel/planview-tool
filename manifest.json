@@ -10,7 +10,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://wsa.pvcloud.com/planview/Track/Time/Report*"],
+      "matches": ["https://*.pvcloud.com/planview/Track/Time/Report*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
