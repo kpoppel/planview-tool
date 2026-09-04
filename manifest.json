@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "description": "Fill Planview time-reporting forms with local defaults.",
   "permissions": ["storage"],
+  "host_permissions": ["https://www.timeanddate.com/holidays/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://wsa.pvcloud.com/planview/Track/Time/Report*"],
