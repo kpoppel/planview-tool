@@ -89,7 +89,7 @@
           <option value="denmark">Denmark</option>
           <option value="germany">Germany</option>
         </select>
-        <button class="pth-scan" id="pth-load-holidays" type="button">Load public holidays</button>
+        <button class="pth-scan" id="pth-load-holidays" type="button">Refresh public holidays</button>
         <div class="pth-holiday-status" id="pth-holiday-status" role="status"></div>
       </div>
     </details>
@@ -237,14 +237,14 @@
     return dayOptions().filter(({ date }) => dates.has(date));
   };
 
-  const loadHolidays = () => {
+  const loadHolidays = (forceRefresh = false) => {
     const year = dayOptions()[0]?.date?.slice(0, 4);
     if (!year) {
       setHolidayStatus("No Planview dates found. Refresh the page and try again.");
       return;
     }
     setHolidayStatus(`Loading ${holidayCountry.value} holidays for ${year}...`);
-    chrome.runtime.sendMessage({ type: "loadHolidays", country: holidayCountry.value, year }, (response) => {
+    chrome.runtime.sendMessage({ type: "loadHolidays", country: holidayCountry.value, year, forceRefresh }, (response) => {
       if (chrome.runtime.lastError || response?.error) {
         setHolidayStatus(`Could not load holidays: ${response?.error || chrome.runtime.lastError?.message || "unknown error"}`);
         return;
@@ -254,7 +254,7 @@
       loadedHolidayYear = year;
       loadedHolidayCountry = holidayCountry.value;
       setHolidayStatus(loadedHolidays.length
-        ? `Found ${loadedHolidays.length} holiday${loadedHolidays.length === 1 ? "" : "s"} in this Planview table.`
+        ? `Found ${loadedHolidays.length} holiday${loadedHolidays.length === 1 ? "" : "s"} in this Planview table${response.cached ? " (cached)" : ""}.`
         : "No public holidays from the selected country are in this table.");
     });
   };
@@ -434,8 +434,14 @@
     setStatus(defaultTemplate.value ? "Default template saved." : "Default template cleared.");
   });
   standardHours.addEventListener("change", saveHolidaySettings);
-  holidayCountry.addEventListener("change", () => { saveHolidaySettings(); loadHolidays(); });
-  panel.querySelector("#pth-load-holidays").addEventListener("click", loadHolidays);
+  holidayCountry.addEventListener("change", () => {
+    loadedHolidays = [];
+    loadedHolidayYear = "";
+    loadedHolidayCountry = "";
+    saveHolidaySettings();
+    loadHolidays();
+  });
+  panel.querySelector("#pth-load-holidays").addEventListener("click", () => loadHolidays(true));
   panel.querySelector("#pth-new-template").addEventListener("click", openTemplateEditor);
   panel.querySelector("#pth-edit-template").addEventListener("click", () => {
     const template = readTemplates().find((item) => item.id === selectedTemplateId());

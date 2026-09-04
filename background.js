@@ -12,26 +12,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  const url = `https://www.timeanddate.com/holidays/${country}/${year}`;
-  fetch(url)
+  const countryCode = country === "germany" ? "DE" : "DK";
+  const nagerUrl = `https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`;
+  const cacheKey = `planviewHolidayCache:${country}:${year}`;
+  const saveAndRespond = (holidays, url) => {
+    chrome.storage.local.set({ [cacheKey]: { cachedAt: Date.now(), holidays, url } });
+    sendResponse({ holidays, url });
+  };
+  const loadFromNetwork = () => fetch(nagerUrl)
     .then((response) => {
-      if (!response.ok) throw new Error(`Holiday source returned ${response.status}.`);
-      return response.text();
+      if (!response.ok) throw new Error(`Nager holiday API returned ${response.status}.`);
+      return response.json();
     })
-    .then((html) => {
-      const table = html.match(/<table[^>]+id=["']holidays-table["'][\s\S]*?<\/table>/i)?.[0] || html;
-      const holidays = Array.from(table.matchAll(/<tr[\s\S]*?<time[^>]+datetime=["'](\d{4}-\d{2}-\d{2})["'][^>]*>[\s\S]*?<\/time>[\s\S]*?<\/tr>/gi))
-        .map((match) => {
-          const row = match[0].replace(/<script[\s\S]*?<\/script>/gi, "");
-          const cells = Array.from(row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi))
-            .map((cell) => cell[1].replace(/<[^>]+>/g, " ").replace(/&[^;]+;/g, " ").replace(/\s+/g, " ").trim())
-            .filter(Boolean);
-          return { date: match[1], name: cells[2] || cells[1] };
-        })
-        .filter(({ name }) => name);
-      sendResponse({ holidays, url });
-    })
-    .catch((error) => sendResponse({ error: error.message }));
+    .then((holidays) => {
+      if (!Array.isArray(holidays)) throw new Error("Nager returned an invalid holiday response.");
+      saveAndRespond(holidays.map(({ date, localName, name }) => ({ date, name: localName || name || "Public holiday" })), nagerUrl);
+    });
+  if (message.forceRefresh) {
+    loadFromNetwork().catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+  chrome.storage.local.get(cacheKey, (result) => {
+    const cached = result[cacheKey];
+    if (cached && Array.isArray(cached.holidays)) {
+      sendResponse({ holidays: cached.holidays, url: cached.url || nagerUrl, cachedAt: cached.cachedAt, cached: true });
+      return;
+    }
+    loadFromNetwork().catch((error) => sendResponse({ error: error.message }));
+  });
 
   return true;
 });
