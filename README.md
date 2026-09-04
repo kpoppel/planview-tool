@@ -8,7 +8,7 @@ This local Chrome/Edge extension fills an existing work row and one daily time c
 2. Enable **Developer mode**.
 3. Choose **Load unpacked** and select this folder.
 4. Open the Planview Report Time page. The helper appears in the upper-right corner.
-5. Choose a **Work item**, choose a **Day**, enter hours such as `7.5` or `7:30`, then choose **Fill form**. Review Planview's values and submit there.
+5. Choose a **Work item**, choose **Daily** or **Weekly total**, enter hours such as `7.5` or `7:30`, then choose **Fill form**. Daily mode also requires a **Day**; weekly mode fills the table's **Weekly** column. Review Planview's values and submit there.
 
 The extension currently targets only the URL in `manifest.json`. If your permitted browser uses a different Planview hostname, update the `matches` entry before loading it.
 

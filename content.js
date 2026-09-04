@@ -30,6 +30,11 @@
     <p>Fill one existing work row. Review the page and submit it yourself.</p>
     <label for="pth-work">Work item</label>
     <select id="pth-work"></select>
+    <label for="pth-entry-type">Entry type</label>
+    <select id="pth-entry-type">
+      <option value="daily">Daily</option>
+      <option value="weekly">Weekly total</option>
+    </select>
     <label for="pth-date">Day</label>
     <select id="pth-date"></select>
     <label for="pth-hours">Hours</label>
@@ -44,6 +49,7 @@
 
   const fields = {
     work: panel.querySelector("#pth-work"),
+    entryType: panel.querySelector("#pth-entry-type"),
     date: panel.querySelector("#pth-date"),
     hours: panel.querySelector("#pth-hours")
   };
@@ -84,6 +90,8 @@
     setOptions(fields.work, works.map(({ id, label }) => ({ value: id, label })), saved.work);
     const days = dayOptions();
     setOptions(fields.date, days.map(({ value, label }) => ({ value, label })), saved.date || days[0]?.value);
+    fields.entryType.value = saved.entryType || "daily";
+    fields.date.disabled = fields.entryType.value === "weekly";
     fields.hours.value = saved.hours || "";
     setStatus(`Ready: ${works.length} work item${works.length === 1 ? "" : "s"}, ${days.length} days.`);
   };
@@ -108,27 +116,34 @@
   };
 
   const scan = () => {
-    loadPageOptions({ work: fields.work.value, date: fields.date.value, hours: fields.hours.value });
+    loadPageOptions({ work: fields.work.value, entryType: fields.entryType.value, date: fields.date.value, hours: fields.hours.value });
   };
 
   const fill = () => {
     const selectedWork = workRows().find(({ id }) => id === fields.work.value);
     const selectedDay = Number(fields.date.value);
     const value = fields.hours.value.trim();
-    if (!selectedWork || !Number.isInteger(selectedDay) || !value) {
-      setStatus("Choose a work item, day, and hours first.");
+    if (!selectedWork || !value) {
+      setStatus("Choose a work item and enter hours first.");
       return;
     }
-    const target = selectedWork.row.querySelectorAll("td.dailyCol input")[selectedDay];
+    const target = fields.entryType.value === "weekly"
+      ? selectedWork.row.querySelector("input[id$='###weekly']")
+      : selectedWork.row.querySelectorAll("td.dailyCol input")[selectedDay];
     if (!target) {
-      setStatus("The selected day cell was not found. Refresh the page and scan again.");
+      setStatus("The selected time cell was not found. Refresh the page and scan again.");
       return;
     }
     setNativeValue(target, value);
     saveDefaults();
-    setStatus(`Filled ${selectedWork.label} on ${fields.date.selectedOptions[0].textContent}: ${value}. Review before submitting.`);
+    const location = fields.entryType.value === "weekly" ? "weekly total" : fields.date.selectedOptions[0].textContent;
+    setStatus(`Filled ${selectedWork.label} (${location}): ${value}. Review before submitting.`);
   };
 
+  fields.entryType.addEventListener("change", () => {
+    fields.date.disabled = fields.entryType.value === "weekly";
+    saveDefaults();
+  });
   panel.querySelector(".pth-scan").addEventListener("click", scan);
   panel.querySelector(".pth-fill").addEventListener("click", fill);
 })();
