@@ -49,8 +49,10 @@
     #${panelId} .pth-modal[open] { display: flex; }
     #${panelId} .pth-dialog { box-sizing: border-box; width: min(560px, calc(100vw - 28px)); max-height: calc(100vh - 28px); overflow: auto; padding: 16px; background: #f8fafb; border: 1px solid #9aa7b2; border-radius: 8px; box-shadow: 0 10px 30px rgba(23,32,42,.28); }
     #${panelId} .pth-dialog h3 { margin: 0 0 12px; }
+    #${panelId} .pth-template-table-wrap { max-height: min(52vh, 460px); overflow: auto; border: 1px solid #d3dbe1; }
     #${panelId} .pth-dialog table { width: 100%; border-collapse: collapse; font-size: 12px; }
     #${panelId} .pth-dialog th, #${panelId} .pth-dialog td { padding: 5px 4px; border-bottom: 1px solid #d3dbe1; text-align: left; }
+    #${panelId} .pth-template-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: #f8fafb; }
     #${panelId} .pth-dialog th:last-child, #${panelId} .pth-dialog td:last-child { width: 110px; }
     #${panelId} .pth-dialog .pth-template-group td { padding: 9px 4px 4px; border-bottom: 1px solid #9aa7b2; color: #52606d; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
     #${panelId} .pth-dialog .pth-dialog-actions { display: flex; gap: 8px; margin-top: 14px; }
@@ -120,7 +122,9 @@
           <label><input type="radio" name="pth-template-mode" value="weekly">Weekly</label>
         </div>
         <p id="pth-template-help">Enter hours for each activity and weekday. Group headings match the Planview table.</p>
-        <table><thead><tr id="pth-template-header"></tr></thead><tbody id="pth-template-rows"></tbody></table>
+        <div class="pth-template-table-wrap">
+          <table><thead><tr id="pth-template-header"></tr></thead><tbody id="pth-template-rows"></tbody></table>
+        </div>
         <div class="pth-dialog-actions">
           <button class="pth-scan" id="pth-template-cancel" type="button">Cancel</button>
           <button class="pth-fill" id="pth-template-save" type="button">Save template</button>
