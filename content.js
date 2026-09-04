@@ -16,6 +16,9 @@
     #${panelId} label { display: block; margin: 9px 0 4px; font-weight: 600; }
     #${panelId} input, #${panelId} select { box-sizing: border-box; width: 100%; padding: 7px 8px; border: 1px solid #aeb8c2; border-radius: 4px; background: white; color: inherit; font: inherit; }
     #${panelId} .pth-template-options { display: none; }
+    #${panelId} .pth-settings { margin-top: 14px; border-top: 1px solid #d3dbe1; padding-top: 10px; }
+    #${panelId} .pth-settings summary { cursor: pointer; color: #52606d; font-size: 12px; font-weight: 600; }
+    #${panelId} .pth-settings-content { padding-top: 4px; }
     #${panelId} .pth-day-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; max-height: 120px; overflow: auto; padding: 6px 0; }
     #${panelId} .pth-day-list label { margin: 0; font-weight: 400; white-space: nowrap; }
     #${panelId} .pth-day-list input { width: auto; margin-right: 5px; }
@@ -31,9 +34,6 @@
   panel.id = panelId;
   panel.innerHTML = `
     <h2>Planview Time Helper</h2>
-    <p>Fill one existing work row. Review the page and submit it yourself.</p>
-    <label for="pth-work">Work item</label>
-    <select id="pth-work"></select>
     <label for="pth-entry-type">Entry type</label>
     <select id="pth-entry-type">
       <option value="daily">Daily</option>
@@ -43,28 +43,36 @@
       <option value="training">Training / conference</option>
       <option value="publicHoliday">Public holidays</option>
     </select>
+    <label for="pth-work">Activity</label>
+    <select id="pth-work"></select>
     <div class="pth-manual-options">
-      <label for="pth-date">Day</label>
-      <select id="pth-date"></select>
+      <label>Days</label>
+      <div id="pth-manual-day-list" class="pth-day-list"></div>
     </div>
     <div class="pth-template-options">
-      <label for="pth-country">Holiday country</label>
-      <select id="pth-country">
-        <option value="denmark">Denmark</option>
-        <option value="germany">Germany</option>
-      </select>
-      <button class="pth-scan" id="pth-load-holidays" type="button">Load public holidays</button>
       <label for="pth-day-count">Number of days</label>
-      <input id="pth-day-count" type="number" min="1" max="31" step="1" value="1">
+      <input id="pth-day-count" type="number" min="1" max="5" step="1" value="1">
       <label>Available days</label>
       <div id="pth-day-list" class="pth-day-list"></div>
     </div>
     <label for="pth-hours">Hours</label>
     <input id="pth-hours" type="text" inputmode="decimal" value="7,4" placeholder="e.g. 7,4 or 7:30">
     <div class="pth-actions">
-      <button class="pth-scan" type="button">Scan page</button>
-      <button class="pth-fill" type="button">Fill form</button>
+      <button class="pth-fill" type="button">Fill</button>
+      <button class="pth-scan" type="button">Clear</button>
     </div>
+    <details class="pth-settings">
+      <summary>Settings</summary>
+      <div class="pth-settings-content">
+        <label for="pth-country">Holiday country</label>
+        <select id="pth-country">
+          <option value="denmark">Denmark</option>
+          <option value="germany">Germany</option>
+        </select>
+        <label for="pth-default-hours">Default hours</label>
+        <input id="pth-default-hours" type="text" inputmode="decimal" value="7,4" placeholder="e.g. 7,4">
+      </div>
+    </details>
     <div class="pth-status" role="status"></div>
   `;
   document.body.appendChild(panel);
@@ -73,10 +81,12 @@
     work: panel.querySelector("#pth-work"),
     entryType: panel.querySelector("#pth-entry-type"),
     date: panel.querySelector("#pth-date"),
+    manualDayList: panel.querySelector("#pth-manual-day-list"),
     country: panel.querySelector("#pth-country"),
     dayCount: panel.querySelector("#pth-day-count"),
     dayList: panel.querySelector("#pth-day-list"),
-    hours: panel.querySelector("#pth-hours")
+    hours: panel.querySelector("#pth-hours"),
+    defaultHours: panel.querySelector("#pth-default-hours")
   };
   const manualOptions = panel.querySelector(".pth-manual-options");
   const templateOptions = panel.querySelector(".pth-template-options");
@@ -90,9 +100,11 @@
     const values = {
       work: fields.work.value,
       entryType: fields.entryType.value,
-      date: fields.date.value,
       dayCount: fields.dayCount.value,
       hours: fields.hours.value,
+      country: fields.country.value,
+      defaultHours: fields.defaultHours.value,
+      manualDays: selectedManualDays(),
       templateDays: selectedTemplateDays()
     };
     chrome.storage.local.set({ [STORAGE_KEY]: values });
@@ -119,6 +131,11 @@
   const dayOptions = () => Array.from(document.querySelectorAll("#timesheet thead th.dailyCol time"))
     .map((time, index) => ({ value: String(index), label: time.textContent.trim(), date: time.dateTime }));
 
+  const weekdayDefaults = (days) => days.filter(({ date }) => {
+    const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+    return day >= 1 && day <= 5;
+  }).map(({ value }) => value);
+
   const templateTerms = {
     vacation: ["vacation", "holiday", "leave"],
     absence: ["absence", "absent", "sick"],
@@ -135,8 +152,24 @@
   const selectedTemplateDays = () => Array.from(fields.dayList.querySelectorAll("input:checked"))
     .map((input) => input.value);
 
+  const selectedManualDays = () => Array.from(fields.manualDayList.querySelectorAll("input:checked"))
+    .map((input) => input.value);
+
   const updateDayList = (days, savedDays = []) => {
     fields.dayList.replaceChildren(...days.map(({ value, label }) => {
+      const item = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = value;
+      checkbox.checked = savedDays.includes(value);
+      checkbox.addEventListener("change", saveDefaults);
+      item.append(checkbox, document.createTextNode(label));
+      return item;
+    }));
+  };
+
+  const updateManualDayList = (days, savedDays = []) => {
+    fields.manualDayList.replaceChildren(...days.map(({ value, label }) => {
       const item = document.createElement("label");
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
@@ -151,10 +184,11 @@
   const updateMode = () => {
     const isTemplate = Object.hasOwn(templateTerms, fields.entryType.value);
     const isHoliday = fields.entryType.value === "publicHoliday";
-    manualOptions.style.display = isTemplate || isHoliday || fields.entryType.value === "weekly" ? "none" : "block";
-    templateOptions.style.display = isTemplate || isHoliday ? "block" : "none";
-    fields.date.disabled = fields.entryType.value === "weekly";
-    fields.hours.value = isTemplate || isHoliday ? "7,4" : fields.hours.value;
+    const showTemplateDays = isTemplate || isHoliday;
+    const showManualDays = fields.entryType.value === "daily";
+    manualOptions.style.display = showManualDays ? "block" : "none";
+    templateOptions.style.display = showTemplateDays ? "block" : "none";
+    fields.hours.value = isTemplate || isHoliday ? fields.defaultHours.value : fields.hours.value;
   };
 
   const loadPageOptions = (saved = {}) => {
@@ -165,11 +199,15 @@
       : findTemplateWork(type, works);
     setOptions(fields.work, works.map(({ id, label }) => ({ value: id, label })), templateWork?.id || saved.work);
     const days = dayOptions();
-    setOptions(fields.date, days.map(({ value, label }) => ({ value, label })), saved.date || days[0]?.value);
+    const savedManualDays = saved.manualDays?.length === days.length ? null : saved.manualDays;
+    updateManualDayList(days, savedManualDays || weekdayDefaults(days));
     fields.entryType.value = type;
-    fields.dayCount.value = saved.dayCount || (Object.hasOwn(templateTerms, type) ? "1" : "");
-    fields.hours.value = saved.hours || (Object.hasOwn(templateTerms, type) ? "7,4" : "");
-    updateDayList(days, saved.templateDays || days.slice(0, Number(fields.dayCount.value) || 1).map(({ value }) => value));
+    fields.country.value = saved.country || "denmark";
+    fields.defaultHours.value = saved.defaultHours || "7,4";
+    fields.dayCount.value = saved.dayCount || (Object.hasOwn(templateTerms, type) || type === "publicHoliday" ? "1" : "");
+    fields.hours.value = saved.hours || (Object.hasOwn(templateTerms, type) || type === "publicHoliday" ? fields.defaultHours.value : "");
+    const defaultTemplateDays = weekdayDefaults(days).slice(0, Math.min(5, Number(fields.dayCount.value) || 1));
+    updateDayList(days, saved.templateDays || defaultTemplateDays);
     updateMode();
     setStatus(`Ready: ${works.length} work item${works.length === 1 ? "" : "s"}, ${days.length} days.`);
   };
@@ -177,9 +215,12 @@
   chrome.storage.local.get(STORAGE_KEY, (result) => {
     const values = result[STORAGE_KEY] || {};
     loadPageOptions(values);
+    if (fields.entryType.value === "publicHoliday") {
+      loadHolidays();
+    }
   });
 
-  [fields.work, fields.date, fields.dayCount, fields.hours].forEach((input) => input.addEventListener("change", saveDefaults));
+  [fields.work, fields.dayCount, fields.hours, fields.country, fields.defaultHours].forEach((input) => input.addEventListener("change", saveDefaults));
 
   const setNativeValue = (element, value) => {
     const prototype = Object.getPrototypeOf(element);
@@ -194,38 +235,55 @@
   };
 
   const scan = () => {
-    loadPageOptions({ work: fields.work.value, entryType: fields.entryType.value, date: fields.date.value, dayCount: fields.dayCount.value, hours: fields.hours.value, templateDays: selectedTemplateDays() });
+    loadPageOptions({ work: fields.work.value, entryType: fields.entryType.value, dayCount: fields.dayCount.value, hours: fields.hours.value, manualDays: selectedManualDays(), templateDays: selectedTemplateDays() });
   };
 
-  const loadHolidays = () => {
+  const loadHolidays = (force = false) => {
     const year = dayOptions()[0]?.date?.slice(0, 4);
     if (!year) {
       setStatus("No Planview dates found. Refresh the page and scan again.");
       return;
     }
-    setStatus(`Loading ${fields.country.value} holidays for ${year}...`);
-    chrome.runtime.sendMessage({ type: "loadHolidays", country: fields.country.value, year }, (response) => {
+    const cacheKey = `${fields.country.value}-${year}`;
+    chrome.storage.local.get("planviewHolidayCache", (result) => {
+      const cache = result.planviewHolidayCache || {};
+      if (!force && cache[cacheKey]) {
+        applyHolidays(cache[cacheKey].holidays, cache[cacheKey].url, true);
+        return;
+      }
+      setStatus(`Loading ${fields.country.value} holidays for ${year}...`);
+      chrome.runtime.sendMessage({ type: "loadHolidays", country: fields.country.value, year }, (response) => {
       if (chrome.runtime.lastError || response?.error) {
         setStatus(`Could not load holidays: ${response?.error || chrome.runtime.lastError.message}`);
         return;
       }
-      const dates = new Set(dayOptions().map(({ date }) => date));
-      loadedHolidays = (response.holidays || []).filter(({ date }) => dates.has(date));
-      updateDayList(dayOptions().filter(({ date }) => loadedHolidays.some((holiday) => holiday.date === date)), loadedHolidays.map(({ date }) => String(dayOptions().findIndex((day) => day.date === date))));
-      setStatus(loadedHolidays.length ? `Found ${loadedHolidays.length} holiday${loadedHolidays.length === 1 ? "" : "s"} in this Planview table.` : "No holidays from the selected country are in this table.");
+        cache[cacheKey] = { holidays: response.holidays || [], url: response.url, cachedAt: Date.now() };
+        chrome.storage.local.set({ planviewHolidayCache: cache });
+        applyHolidays(response.holidays || [], response.url, false);
+      });
     });
+  };
+
+  const applyHolidays = (holidays, url, cached) => {
+    const dates = new Set(dayOptions().map(({ date }) => date));
+    loadedHolidays = holidays.filter(({ date }) => dates.has(date));
+    const visibleDays = dayOptions().filter(({ date }) => loadedHolidays.some((holiday) => holiday.date === date));
+    updateDayList(visibleDays, visibleDays.map(({ date }) => String(dayOptions().findIndex((day) => day.date === date))));
+    setStatus(loadedHolidays.length ? `${cached ? "Using cached" : "Loaded"} ${loadedHolidays.length} public holiday${loadedHolidays.length === 1 ? "" : "s"}.` : "No holidays from the selected country are in this table.");
+    if (fields.entryType.value === "publicHoliday" && loadedHolidays.length) {
+      fill();
+    }
   };
 
   const fill = () => {
     const selectedWork = workRows().find(({ id }) => id === fields.work.value);
-    const selectedDay = Number(fields.date.value);
     const value = fields.hours.value.trim();
     if (!selectedWork || !value) {
       setStatus("Choose a work item and enter hours first.");
       return;
     }
-    if (Object.hasOwn(templateTerms, fields.entryType.value) || fields.entryType.value === "publicHoliday") {
-      const days = selectedTemplateDays();
+    if (Object.hasOwn(templateTerms, fields.entryType.value) || fields.entryType.value === "publicHoliday" || fields.entryType.value === "daily") {
+      const days = fields.entryType.value === "daily" ? selectedManualDays() : selectedTemplateDays();
       if (!days.length) {
         setStatus("Select at least one available day first.");
         return;
@@ -236,17 +294,21 @@
       setStatus(`Filled ${selectedWork.label} on ${targets.length} day${targets.length === 1 ? "" : "s"}: ${value}. Review before submitting.`);
       return;
     }
-    const target = fields.entryType.value === "weekly"
-      ? selectedWork.row.querySelector("input[id$='###weekly']")
-      : selectedWork.row.querySelectorAll("td.dailyCol input")[selectedDay];
+    const target = selectedWork.row.querySelector("input[id$='###weekly']");
     if (!target) {
       setStatus("The selected time cell was not found. Refresh the page and scan again.");
       return;
     }
     setNativeValue(target, value);
     saveDefaults();
-    const location = fields.entryType.value === "weekly" ? "weekly total" : fields.date.selectedOptions[0].textContent;
+    const location = "weekly total";
     setStatus(`Filled ${selectedWork.label} (${location}): ${value}. Review before submitting.`);
+  };
+
+  const clearForm = () => {
+    const timeInputs = document.querySelectorAll("#timesheet tbody tr.workRow td.entryBox input");
+    timeInputs.forEach((input) => setNativeValue(input, ""));
+    setStatus(`Cleared ${timeInputs.length} Planview time entr${timeInputs.length === 1 ? "y" : "ies"}. Review before submitting.`);
   };
 
   fields.entryType.addEventListener("change", () => {
@@ -258,13 +320,16 @@
     if (Object.hasOwn(templateTerms, type) || type === "publicHoliday") {
       fields.dayCount.value = "1";
       fields.hours.value = "7,4";
-      updateDayList(dayOptions(), dayOptions().slice(0, 1).map(({ value }) => value));
+      updateDayList(dayOptions(), weekdayDefaults(dayOptions()).slice(0, 1));
     }
     updateMode();
     saveDefaults();
+    if (type === "publicHoliday") {
+      loadHolidays();
+    }
   });
   fields.dayCount.addEventListener("input", () => {
-    const count = Math.max(1, Math.min(31, Number(fields.dayCount.value) || 1));
+    const count = Math.max(1, Math.min(5, Number(fields.dayCount.value) || 1));
     const days = dayOptions();
     const selected = selectedTemplateDays();
     const next = days.map(({ value }) => value).filter((value) => selected.includes(value)).slice(0, count);
@@ -272,7 +337,35 @@
     updateDayList(days, next.concat(additions));
     saveDefaults();
   });
-  panel.querySelector(".pth-scan").addEventListener("click", scan);
-  panel.querySelector("#pth-load-holidays").addEventListener("click", loadHolidays);
+  panel.querySelector(".pth-scan").addEventListener("click", clearForm);
   panel.querySelector(".pth-fill").addEventListener("click", fill);
+
+  let lastLocation = window.location.href;
+  let lastTableSignature = "";
+  let refreshTimer;
+  const refreshForPlanviewNavigation = () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      const table = document.querySelector("#timesheet");
+      const signature = table ? `${window.location.href}|${table.querySelector("thead")?.textContent}|${table.querySelectorAll("tbody tr.workRow").length}` : "";
+      if (!signature || (window.location.href === lastLocation && signature === lastTableSignature)) return;
+      lastLocation = window.location.href;
+      lastTableSignature = signature;
+      const saved = {
+        work: fields.work.value,
+        entryType: fields.entryType.value,
+        dayCount: fields.dayCount.value,
+        hours: fields.hours.value,
+        country: fields.country.value,
+        defaultHours: fields.defaultHours.value,
+        manualDays: selectedManualDays(),
+        templateDays: selectedTemplateDays()
+      };
+      loadPageOptions(saved);
+      if (fields.entryType.value === "publicHoliday") loadHolidays();
+    }, 250);
+  };
+  const tableObserver = new MutationObserver(refreshForPlanviewNavigation);
+  tableObserver.observe(document.querySelector("#timesheet") || document.body, { childList: true, subtree: true });
+  window.addEventListener("popstate", refreshForPlanviewNavigation);
 })();
