@@ -288,6 +288,15 @@
   const updateTemplateOptions = (works, selectedValue = "") => {
     const templates = readTemplates();
     const options = [];
+    const templateGroup = document.createElement("optgroup");
+    templateGroup.label = "Templates";
+    templates.forEach((template) => {
+      const valid = templateIsValid(template, works);
+      const option = new Option(`${template.name}${valid ? "" : " (needs update)"}`, `template:${template.id}`);
+      option.dataset.templateId = template.id;
+      templateGroup.append(option);
+    });
+    if (templates.length) options.push(templateGroup);
     const groups = new Map();
     works.forEach((work) => {
       const group = work.group || "Other activities";
@@ -300,15 +309,6 @@
       groupWorks.forEach(({ id, label }) => optgroup.append(new Option(label, id)));
       options.push(optgroup);
     });
-    const templateGroup = document.createElement("optgroup");
-    templateGroup.label = "Templates";
-    templates.forEach((template) => {
-      const valid = templateIsValid(template, works);
-      const option = new Option(`${template.name}${valid ? "" : " (needs update)"}`, `template:${template.id}`);
-      option.dataset.templateId = template.id;
-      templateGroup.append(option);
-    });
-    if (templates.length) options.push(templateGroup);
     fields.activity.replaceChildren(...options);
     const allOptions = Array.from(fields.activity.options);
     fields.activity.value = selectedValue && allOptions.some((option) => option.value === selectedValue)
