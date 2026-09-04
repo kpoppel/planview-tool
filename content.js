@@ -31,6 +31,7 @@
     #${panelId} .pth-adjustment-table th:first-child, #${panelId} .pth-adjustment-table td:first-child { width: calc(100% - 72px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #${panelId} .pth-adjustment-table th:last-child, #${panelId} .pth-adjustment-table td:last-child { width: 64px; }
     #${panelId} .pth-adjustment-table input { width: 64px; padding: 4px; }
+    #${panelId} .pth-adjustment-group td { padding-top: 8px; color: #52606d; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
     #${panelId} .pth-adjustment-table tbody { display: block; max-height: 132px; overflow-y: auto; }
     #${panelId} .pth-adjustment-table thead, #${panelId} .pth-adjustment-table tbody tr { display: table; width: 100%; table-layout: fixed; }
     #${panelId} .pth-day-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; max-height: 120px; overflow: auto; padding: 6px 0; }
@@ -40,6 +41,7 @@
     #${panelId} button { flex: 1; padding: 8px 10px; border: 0; border-radius: 4px; cursor: pointer; font: 600 13px system-ui, sans-serif; }
     #${panelId} .pth-fill { background: #176b87; color: white; }
     #${panelId} .pth-scan { background: #dce5ea; color: #17202a; }
+    #${panelId} .pth-danger { background: #b42318; color: white; }
     #${panelId} .pth-status { min-height: 18px; margin-top: 10px; color: #52606d; font-size: 12px; }
     #${panelId} .pth-template-actions { display: flex; gap: 8px; margin-top: 8px; }
     #${panelId} .pth-template-actions button { flex: 1; }
@@ -50,6 +52,7 @@
     #${panelId} .pth-dialog table { width: 100%; border-collapse: collapse; font-size: 12px; }
     #${panelId} .pth-dialog th, #${panelId} .pth-dialog td { padding: 5px 4px; border-bottom: 1px solid #d3dbe1; text-align: left; }
     #${panelId} .pth-dialog th:last-child, #${panelId} .pth-dialog td:last-child { width: 110px; }
+    #${panelId} .pth-dialog .pth-template-group td { padding: 9px 4px 4px; border-bottom: 1px solid #9aa7b2; color: #52606d; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
     #${panelId} .pth-dialog .pth-dialog-actions { display: flex; gap: 8px; margin-top: 14px; }
     #${panelId} .pth-dialog .pth-dialog-actions button { flex: 1; }
   `;
@@ -62,9 +65,11 @@
     <label for="pth-entry-type">Entry type</label>
     <select id="pth-entry-type">
     </select>
+    <p class="pth-entry-help">Activities are grouped as they appear in Planview.</p>
     <div class="pth-template-actions">
       <button class="pth-scan" id="pth-new-template" type="button">New template</button>
       <button class="pth-scan" id="pth-edit-template" type="button">Edit selected</button>
+      <button class="pth-danger" id="pth-delete-template" type="button">Delete selected</button>
     </div>
     <div class="pth-entry-mode">
       <div class="pth-mode" role="radiogroup" aria-label="Entry frequency">
@@ -114,7 +119,7 @@
           <label><input type="radio" name="pth-template-mode" value="daily" checked>Daily</label>
           <label><input type="radio" name="pth-template-mode" value="weekly">Weekly</label>
         </div>
-        <p id="pth-template-help">Enter hours for each activity and weekday.</p>
+        <p id="pth-template-help">Enter hours for each activity and weekday. Group headings match the Planview table.</p>
         <table><thead><tr id="pth-template-header"></tr></thead><tbody id="pth-template-rows"></tbody></table>
         <div class="pth-dialog-actions">
           <button class="pth-scan" id="pth-template-cancel" type="button">Cancel</button>
@@ -195,7 +200,19 @@
       .filter(({ weekday, value }) => weekday >= 1 && weekday <= 5 && !holidayIndexes.has(Number(value)))
       .map(({ weekday }) => weekday)).size || Math.max(visibleWeekdays.size - holidayIndexes.size, 0);
     const entries = new Map(Array.isArray(template?.entries) ? template.entries.map((entry) => [entry.id, entry.hours]) : []);
-    fields.adjustmentRows.replaceChildren(...works.map(({ id, label }) => {
+    const rows = [];
+    let currentGroup = "";
+    works.forEach(({ id, label, group }) => {
+      if (group !== currentGroup) {
+        currentGroup = group;
+        const groupRow = document.createElement("tr");
+        groupRow.className = "pth-adjustment-group";
+        const groupCell = document.createElement("td");
+        groupCell.colSpan = 2;
+        groupCell.textContent = group;
+        groupRow.append(groupCell);
+        rows.push(groupRow);
+      }
       const row = document.createElement("tr");
       const labelCell = document.createElement("td");
       labelCell.textContent = label;
@@ -228,8 +245,9 @@
       input.addEventListener("wheel", (event) => event.stopPropagation());
       inputCell.append(input);
       row.append(labelCell, inputCell);
-      return row;
-    }));
+      rows.push(row);
+    });
+    fields.adjustmentRows.replaceChildren(...rows);
   };
 
   const templateWeekdays = [
@@ -265,27 +283,54 @@
 
   const updateTemplateOptions = (works, selectedValue = "") => {
     const templates = readTemplates();
-    const options = works.map(({ id, label }) => new Option(label, id));
+    const options = [];
+    const groups = new Map();
+    works.forEach((work) => {
+      const group = work.group || "Other activities";
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(work);
+    });
+    groups.forEach((groupWorks, groupLabel) => {
+      const optgroup = document.createElement("optgroup");
+      optgroup.label = groupLabel;
+      groupWorks.forEach(({ id, label }) => optgroup.append(new Option(label, id)));
+      options.push(optgroup);
+    });
+    const templateGroup = document.createElement("optgroup");
+    templateGroup.label = "Templates";
     templates.forEach((template) => {
       const valid = templateIsValid(template, works);
       const option = new Option(`${template.name}${valid ? "" : " (needs update)"}`, `template:${template.id}`);
       option.dataset.templateId = template.id;
-      options.push(option);
+      templateGroup.append(option);
     });
+    if (templates.length) options.push(templateGroup);
     fields.activity.replaceChildren(...options);
-    fields.activity.value = selectedValue && options.some((option) => option.value === selectedValue)
+    const allOptions = Array.from(fields.activity.options);
+    fields.activity.value = selectedValue && allOptions.some((option) => option.value === selectedValue)
       ? selectedValue : (works[0]?.id || "");
     updateAdjustmentOptions(works);
     defaultTemplate.replaceChildren(new Option("No default", ""), ...templates.map((template) => new Option(template.name, template.id)));
   };
 
-  const workRows = () => Array.from(document.querySelectorAll("#timesheet tbody tr.workRow"))
-    .map((row) => ({
-      row,
-      id: row.querySelector("input[id$='###weekly']")?.id.split("###")[0],
-      label: row.querySelector(".descrCol span[title]")?.textContent.trim() || row.querySelector(".descrCol")?.textContent.trim()
-    }))
-    .filter((item) => item.id && item.label);
+  const workRows = () => {
+    let group = "Other activities";
+    return Array.from(document.querySelectorAll("#timesheet tbody > tr"))
+      .flatMap((row) => {
+        if (row.classList.contains("projRow")) {
+          group = row.querySelector(".descrCol")?.textContent.replace(/\s+/g, " ").trim() || "Other activities";
+          return [];
+        }
+        if (!row.classList.contains("workRow")) return [];
+        const item = {
+          row,
+          group,
+          id: row.querySelector("input[id$='###weekly']")?.id.split("###")[0],
+          label: row.querySelector(".descrCol span[title]")?.textContent.trim() || row.querySelector(".descrCol")?.textContent.trim()
+        };
+        return item.id && item.label ? [item] : [];
+      });
+  };
 
   const dayOptions = () => Array.from(document.querySelectorAll("#timesheet thead th.dailyCol time"))
     .map((time, index) => {
@@ -424,7 +469,19 @@
       cell.textContent = label;
       return cell;
     }));
-    templateRows.replaceChildren(...workRows().map(({ id, label }) => {
+    const rows = [];
+    let currentGroup = "";
+    workRows().forEach(({ id, label, group }) => {
+      if (group !== currentGroup) {
+        currentGroup = group;
+        const groupRow = document.createElement("tr");
+        groupRow.className = "pth-template-group";
+        const groupCell = document.createElement("td");
+        groupCell.colSpan = mode === "daily" ? 6 : 2;
+        groupCell.textContent = group;
+        groupRow.append(groupCell);
+        rows.push(groupRow);
+      }
       const row = document.createElement("tr");
       row.dataset.activityId = id;
       const labelCell = document.createElement("td");
@@ -453,8 +510,9 @@
         inputCell.append(input);
         row.append(inputCell);
       }
-      return row;
-    }));
+      rows.push(row);
+    });
+    templateRows.replaceChildren(...rows);
   };
 
   const openTemplateEditor = (template = null) => {
@@ -525,6 +583,18 @@
     const template = readTemplates().find((item) => item.id === selectedTemplateId());
     if (template) openTemplateEditor(template);
     else setStatus("Select a custom template first.");
+  });
+  panel.querySelector("#pth-delete-template").addEventListener("click", () => {
+    const templateId = selectedTemplateId();
+    const template = readTemplates().find((item) => item.id === templateId);
+    if (!template) {
+      setStatus("Select a custom template first.");
+      return;
+    }
+    if (!window.confirm(`Delete template “${template.name}”?`)) return;
+    writeTemplates(readTemplates().filter((item) => item.id !== templateId));
+    loadPageOptions({ work: "", mode: selectedMode(), hours: fields.hours.value, manualDays: selectedManualDays() });
+    setStatus(`Deleted template “${template.name}”.`);
   });
   panel.querySelector("#pth-template-cancel").addEventListener("click", () => { editingTemplateId = ""; templateModal.removeAttribute("open"); });
   panel.querySelector("#pth-template-save").addEventListener("click", saveTemplate);
